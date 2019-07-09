@@ -1,0 +1,68 @@
+dirs:
+    train:
+        data: /data/sxu/easton/data/AISHELL/train_phone_67.csv
+        tfdata: /data/sxu/easton/data/AISHELL/tfdata/train
+    dev:
+        data: /data/sxu/easton/data/AISHELL/dev_phone_1k.csv
+        tfdata: /data/sxu/easton/data/AISHELL/tfdata/dev_1k
+    test:
+        data: /data/sxu/easton/data/AISHELL/test_phone_67.csv
+    type: csv
+    vocab: /home/user/easton/projects/CipherGAN-tf2/data/vigenere345_brown200_vocab.txt
+
+data:
+    featType: mfcc
+    dim_raw_input: 13
+    num_context: 5
+    downsample: 2
+    add_delta: True
+    unit: phone
+
+model:
+    G:
+        structure: fc
+        num_hidden: 512
+        num_layers: 1
+        filter_count: 32
+        filter_size: 1
+    D:
+        num_hidden: 512
+        num_blocks: 5
+        filter_count: 32
+        filter_size: 1
+        dropout: 0.5
+    add_timing: transformer
+    dim_hidden: 512
+    dropout: 0.5
+    lp_distance: l1
+    use_wasserstein: False
+    use_embeddings: True
+    original_l2: True
+    wasserstein_loss: 10
+    loss_type: wgan  # loss_type
+
+opti:
+    type: adam
+    D_G_rate: 5
+    cycle_loss: 1.0
+    G:
+        lr: 0.00001
+    D:
+        lr: 0.00001
+
+dev_step: 50
+decode_step: 50
+save_step: 50
+
+gpus: '0'
+# gpus: '0,1,2,3'
+num_batch_tokens: 250000
+batch_size: 360
+max_seq_len: 100
+# batch_size: 1000
+bucket_boundaries: 161,182,202,223,245,269,298,336,431,726,1000
+
+num_epochs: 100000
+num_steps: 500000
+
+lambda_gp: 10.0
