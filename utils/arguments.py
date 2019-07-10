@@ -18,5 +18,3 @@ class AttrDict(dict):
 
 CONFIG_FILE = sys.argv[-1]
 args = AttrDict(yaml.load(open(CONFIG_FILE), Loader=yaml.SafeLoader))
-
-args.add_timing = True

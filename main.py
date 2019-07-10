@@ -37,9 +37,12 @@ def main(args):
     W_emb(tf.zeros([1, args.vocab_size]))
 
     optimizer_G = tf.keras.optimizers.Adam(args.opti.G.lr, beta_1=0.9, beta_2=0.999)
-    optimizer_D = tf.keras.optimizers.Adam(args.opti.D.lr, beta_1=0.9, beta_2=0.999)
+    optimizer_F = tf.keras.optimizers.Adam(args.opti.G.lr, beta_1=0.9, beta_2=0.999)
+    optimizer_DX = tf.keras.optimizers.Adam(args.opti.D.lr, beta_1=0.9, beta_2=0.999)
+    optimizer_DY = tf.keras.optimizers.Adam(args.opti.D.lr, beta_1=0.9, beta_2=0.999)
+    optimizer_Embed = tf.keras.optimizers.Adam(args.opti.G.lr, beta_1=0.9, beta_2=0.999)
 
-    def train_step(batch, losses, optimizer, variables):
+    def train_step(batch):
         """
         train_gX, G_X_loss, generator_G
         train_gY, G_Y_loss, generator_F
@@ -47,14 +50,19 @@ def main(args):
         train_dY, D_Y_loss, D_Y
         train_emb, embedding_loss
         """
-        with tf.GradientTape(watch_accessed_variables=False) as tape:
-            tape.watch(variables)
+
+        with tf.GradientTape(persistent=True) as tape:
             dict_losses, predicts = cycle_gan_loss(
                     G, F, D_X, D_Y, batch, args=args, W_emb=W_emb)
-            loss = tf.reduce_sum([dict_losses[type] for type in losses])
 
-        gradients = tape.gradient(loss, variables)
-        optimizer.apply_gradients(zip(gradients, variables))
+        for loss_type, vars, optimizer in zip(
+            ['G_loss', 'F_loss', 'D_X_loss', 'D_Y_loss', 'Embed_loss'],
+            [G.trainable_variables, F.trainable_variables, D_X.trainable_variables, D_Y.trainable_variables, W_emb.trainable_variables],
+            [optimizer_G, optimizer_F, optimizer_DX, optimizer_DY, optimizer_Embed]):
+
+            gradients = tape.gradient(dict_losses[loss_type], vars)
+            optimizer.apply_gradients(zip(gradients, vars))
+        del tape
 
         return dict_losses, predicts
 
@@ -67,20 +75,15 @@ def main(args):
         if iteration == 0:
             cycle_gan_loss(G, F, D_X, D_Y, batch, args=args, W_emb=W_emb)
             F.summary(); G.summary(); D_X.summary(); D_Y.summary()
-            var_Gs = F.trainable_variables + G.trainable_variables + W_emb.trainable_variables
-            var_Ds = D_X.trainable_variables + D_Y.trainable_variables + W_emb.trainable_variables
 
-        if iteration % args.opti.D_G_rate != 0:
-            dict_losses, predicts = train_step(batch, ['D_X_loss', 'D_Y_loss'], optimizer_D, var_Ds)
-        if iteration % args.opti.D_G_rate == 0:
-            dict_losses, predicts = train_step(batch, ['G_loss', 'F_loss'], optimizer_G, var_Gs)
+        dict_losses, predicts = train_step(batch)
 
         X_hat, Y_hat, X_reconstruction, Y_reconstruction = predicts
 
         X_groundtruth_loss, Y_groundtruth_loss, X_groundtruth_acc, Y_groundtruth_acc = \
             monitor(X, X_hat, X_reconstruction, X_groundtruth, Y, Y_hat, Y_reconstruction, Y_groundtruth, args.vocab_size)
 
-        if iteration % 10 == 0:
+        if iteration % 50 == 0:
             print('G:{:.3f}\t F:{:.3f}\t D_X:{:.2f}\tD_Y:{:.2f}\tlabel loss: {:.2f}|{:.2f}\t label acc: {:.3f}|{:.3f} batch:{} used: {:.2f} iter: {}'.format(
                    dict_losses['G_loss'], dict_losses['F_loss'], dict_losses['D_X_loss'], dict_losses['D_Y_loss'], X_groundtruth_loss, Y_groundtruth_loss, X_groundtruth_acc, Y_groundtruth_acc,
                    X.shape, time()-start, iteration))

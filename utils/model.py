@@ -153,22 +153,22 @@ def discrim_loss(X_discrim, Y_discrim, loss_type="wgan"):
             X and Y as true data samples.
     """
     if loss_type == "wgan":
-        X_discrim_loss_to_True = -tf.reduce_mean(X_discrim)
-        Y_discrim_loss_to_True = -tf.reduce_mean(Y_discrim)
-        X_discrim_loss_to_False = -X_discrim_loss_to_True
-        Y_discrim_loss_to_False = -Y_discrim_loss_to_True
+        X_discrim_to_True_loss = -tf.reduce_mean(X_discrim)
+        Y_discrim_to_True_loss = -tf.reduce_mean(Y_discrim)
+        X_discrim_loss_to_False = -X_discrim_to_True_loss
+        Y_discrim_loss_to_False = -Y_discrim_to_True_loss
     elif loss_type == "log":
-        X_discrim_loss_to_True = tf.reduce_mean(tf.log(X_discrim))
-        Y_discrim_loss_to_True = tf.reduce_mean(tf.log(Y_discrim))
-        X_discrim_loss_to_False = -X_discrim_loss_to_True
-        Y_discrim_loss_to_False = -Y_discrim_loss_to_True
+        X_discrim_to_True_loss = tf.reduce_mean(tf.log(X_discrim))
+        Y_discrim_to_True_loss = tf.reduce_mean(tf.log(Y_discrim))
+        X_discrim_loss_to_False = -X_discrim_to_True_loss
+        Y_discrim_loss_to_False = -Y_discrim_to_True_loss
     else:
-        X_discrim_loss_to_True = tf.reduce_mean(tf.math.squared_difference(X_discrim, 1))
-        Y_discrim_loss_to_True = tf.reduce_mean(tf.math.squared_difference(Y_discrim, 1))
+        X_discrim_to_True_loss = tf.reduce_mean(tf.math.squared_difference(X_discrim, 1))
+        Y_discrim_to_True_loss = tf.reduce_mean(tf.math.squared_difference(Y_discrim, 1))
         X_discrim_loss_to_False = tf.reduce_mean(X_discrim**2)
         Y_discrim_loss_to_False = tf.reduce_mean(Y_discrim**2)
 
-    return (X_discrim_loss_to_True, Y_discrim_loss_to_True), (X_discrim_loss_to_False, Y_discrim_loss_to_False)
+    return (X_discrim_to_True_loss, Y_discrim_to_True_loss), (X_discrim_loss_to_False, Y_discrim_loss_to_False)
 
 
 def cycle_gan_loss(G, F, D_X, D_Y, batch, args, W_emb=None):
@@ -215,24 +215,27 @@ def cycle_gan_loss(G, F, D_X, D_Y, batch, args, W_emb=None):
 
     cycle_loss = X_reconstr_err + Y_reconstr_err
 
-    (X_hat_discrim_loss_to_True, Y_hat_discrim_loss_to_True), (X_hat_discrim_loss_to_False, Y_hat_discrim_loss_to_False) = \
+    (X_hat_discrim_to_True_loss, Y_hat_discrim_to_True_loss), (X_hat_discrim_to_False_loss, Y_hat_discrim_to_False_loss) = \
         discrim_loss(X_hat_discrim, Y_hat_discrim, loss_type=args.model.loss_type)
 
-    F_loss = X_hat_discrim_loss_to_True + args.opti.cycle_loss * cycle_loss
-    G_loss = Y_hat_discrim_loss_to_True + args.opti.cycle_loss * cycle_loss
+    F_loss = X_hat_discrim_to_True_loss + args.opti.cycle_loss * cycle_loss
+    G_loss = Y_hat_discrim_to_True_loss + args.opti.cycle_loss * cycle_loss
     dict_losses['F_loss'] = F_loss
     dict_losses['G_loss'] = G_loss
 
-    (X_discrim_loss_to_True, Y_discrim_loss_to_True), _ = \
+    (X_discrim_to_True_loss, Y_discrim_to_True_loss), _ = \
         discrim_loss(X_discrim, Y_discrim, loss_type=args.model.loss_type)
-    D_X_loss = X_discrim_loss_to_True + X_hat_discrim_loss_to_False
-    D_Y_loss = Y_discrim_loss_to_True + Y_hat_discrim_loss_to_False
-
+    D_X_loss = X_discrim_to_True_loss + X_hat_discrim_to_False_loss
+    D_Y_loss = Y_discrim_to_True_loss + Y_hat_discrim_to_False_loss
     if args.model.use_wasserstein:
         D_X_loss += wasserstein_penalty(D_X, X_dist, X_hat, W_emb, args)
         D_Y_loss += wasserstein_penalty(D_Y, Y_dist, Y_hat, W_emb, args)
     dict_losses['D_X_loss'] = D_X_loss
     dict_losses['D_Y_loss'] = D_Y_loss
+
+    if args.model.use_embeddings:
+        Embed_loss = D_X_loss + D_Y_loss + args.opti.cycle_loss * cycle_loss
+        dict_losses['Embed_loss'] = Embed_loss
 
     return dict_losses, (X_hat, Y_hat, X_reconstruction, Y_reconstruction)
 
@@ -295,21 +298,6 @@ def timing(x, timing_type):
 
 def embed_inputs(inputs, W_emb):
     return tf.gather(W_emb.variables[0], inputs)
-
-
-def softmax_to_embedding(x, W_emb):
-    vocab_size, hidden_size = W_emb.variables[0].shape
-    o_shape = x.shape.as_list()
-    if o_shape[0] is None:
-        o_shape[0] = tf.shape(x)[0]
-    if o_shape[1] is None:
-        o_shape[1] = tf.shape(x)[1]
-
-    output_dist = tf.reshape(x, [o_shape[0] * o_shape[1], vocab_size])
-    output = W_emb(output_dist)
-    output = tf.reshape(output, [o_shape[0], o_shape[1], hidden_size])
-
-    return output
 
 
 # def construct_vocab_lookup_table(vocab):
@@ -376,8 +364,8 @@ def wasserstein_penalty(discriminator, A_true, A_fake, W_emb, args):
 
     if args.model.original_l2:
         l2_loss = tf.sqrt(tf.reduce_sum(discrim_A_grads**2, axis=[1, 2]))
-        loss = args.model.wasserstein_loss * tf.reduce_mean((l2_loss - 1)**2)
+        loss = args.opti.wasserstein_loss * tf.reduce_mean((l2_loss - 1)**2)
     else:
-        loss = args.model.wasserstein_loss * (tf.nn.l2_loss(discrim_A_grads) - 1)**2
+        loss = args.opti.wasserstein_loss * (tf.nn.l2_loss(discrim_A_grads) - 1)**2
 
     return loss
