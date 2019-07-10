@@ -1,3 +1,5 @@
+# Implement cycleGAN with Tensorflow 2.0
+
 Import the generator and the discriminator used in [Pix2Pix](https://github.com/tensorflow/examples/blob/master/tensorflow_examples/models/pix2pix/pix2pix.py) via the installed [tensorflow_examples](https://github.com/tensorflow/examples) package.
 
 The model architecture used in this tutorial is very similar to what was used in [pix2pix](https://github.com/tensorflow/examples/blob/master/tensorflow_examples/models/pix2pix/pix2pix.py). Some of the differences are:
@@ -26,3 +28,7 @@ $$backward\ cycle\ consistency\ loss: Y -> F(Y) -> G(F(Y)) \sim \hat{Y}$$
 
 
 ![Cycle loss](imgs/cycle_loss.png)
+
+## Reference
+- [cycleGAN](https://github.com/tensorflow/docs/blob/master/site/en/r2/tutorials/generative/cyclegan.ipynb)
+- [cipherGAN](https://github.com/for-ai/CipherGAN)
