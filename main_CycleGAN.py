@@ -12,11 +12,11 @@ import matplotlib.pyplot as plt
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 np.set_printoptions(precision=3)
 BUFFER_SIZE = 1000
-BATCH_SIZE = 1
+BATCH_SIZE = 16
 IMG_WIDTH = 256
 IMG_HEIGHT = 256
 LAMBDA = 10
-EPOCHS = 40
+EPOCHS = 400
 
 
 def main(args):
@@ -30,11 +30,11 @@ def main(args):
     PATH = '/home/user/easton/data/horse2zebra/'
 
     train_horses = tf.data.Dataset.list_files(PATH + 'trainA/*.jpg', shuffle=False).map(
-        preprocess_image_train, num_parallel_calls=AUTOTUNE).cache().shuffle(
+        preprocess_image_train, num_parallel_calls=AUTOTUNE).cache().repeat(EPOCHS).shuffle(
         BUFFER_SIZE).batch(BATCH_SIZE)
 
     train_zebras = tf.data.Dataset.list_files(PATH + 'trainB/*.jpg', shuffle=False).map(
-        preprocess_image_train, num_parallel_calls=AUTOTUNE).cache().shuffle(
+        preprocess_image_train, num_parallel_calls=AUTOTUNE).cache().repeat(EPOCHS).shuffle(
         BUFFER_SIZE).batch(BATCH_SIZE)
 
     test_horses = tf.data.Dataset.list_files(PATH + 'testA/*.jpg', shuffle=False).map(
@@ -48,15 +48,15 @@ def main(args):
     sample_horse = next(iter(train_horses))
     sample_zebra = next(iter(train_zebras))
 
-    plt.subplot(121)
-    plt.title('Horse')
-    plt.imshow(denormalize(sample_horse[0]))
-
-    plt.subplot(122)
-    plt.title('Horse with random jitter')
-    plt.imshow(denormalize(random_jitter(sample_horse[0])))
-
-    plt.savefig('peek.png')
+    # plt.subplot(121)
+    # plt.title('Horse')
+    # plt.imshow(denormalize(sample_horse[0]))
+    #
+    # plt.subplot(122)
+    # plt.title('Horse with random jitter')
+    # plt.imshow(denormalize(random_jitter(sample_horse[0])))
+    #
+    # plt.savefig('peek.png')
 
     # gather transformations and descriminators
     OUTPUT_CHANNELS = 3
@@ -67,46 +67,46 @@ def main(args):
     D_X = pix2pix.discriminator(norm_type='instancenorm', target=False)
     D_Y = pix2pix.discriminator(norm_type='instancenorm', target=False)
 
-    to_zebra = G(sample_horse)
-    to_horse = F(sample_zebra)
-    plt.figure(figsize=(8, 8))
-    contrast = 8 # to see it carefully since init model output is poor
-    imgs = [sample_horse, to_zebra, sample_zebra, to_horse]
-    title = ['Horse', 'To Zebra', 'Zebra', 'To Horse']
-
-    for i in range(len(imgs)):
-        plt.subplot(2, 2, i+1)
-        plt.title(title[i])
-        if i % 2 == 0:
-            plt.imshow(denormalize(imgs[i][0]))
-        else:
-            plt.imshow(imgs[i][0] * 0.5 * contrast + 0.5)
-    plt.savefig('init.png')
-
-    plt.figure(figsize=(8, 8))
-
-    plt.subplot(121)
-    plt.title('Is a real zebra?')
-    plt.imshow(D_Y(sample_zebra)[0, ..., -1], cmap='RdBu_r')
-
-    plt.subplot(122)
-    plt.title('Is a real horse?')
-    plt.imshow(D_X(sample_horse)[0, ..., -1], cmap='RdBu_r')
-
-    plt.savefig('init.png')
+    # to_zebra = G(sample_horse)
+    # to_horse = F(sample_zebra)
+    # plt.figure(figsize=(8, 8))
+    # contrast = 8 # to see it carefully since init model output is poor
+    # imgs = [sample_horse, to_zebra, sample_zebra, to_horse]
+    # title = ['Horse', 'To Zebra', 'Zebra', 'To Horse']
+    #
+    # for i in range(len(imgs)):
+    #     plt.subplot(2, 2, i+1)
+    #     plt.title(title[i])
+    #     if i % 2 == 0:
+    #         plt.imshow(denormalize(imgs[i][0]))
+    #     else:
+    #         plt.imshow(imgs[i][0] * 0.5 * contrast + 0.5)
+    # plt.savefig('init.png')
+    #
+    # plt.figure(figsize=(8, 8))
+    #
+    # plt.subplot(121)
+    # plt.title('Is a real zebra?')
+    # plt.imshow(D_Y(sample_zebra)[0, ..., -1], cmap='RdBu_r')
+    #
+    # plt.subplot(122)
+    # plt.title('Is a real horse?')
+    # plt.imshow(D_X(sample_horse)[0, ..., -1], cmap='RdBu_r')
+    #
+    # plt.savefig('init.png')
 
     loss_obj = tf.keras.losses.BinaryCrossentropy(from_logits=True)
 
-    generator_g_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
-    generator_f_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
-    discriminator_x_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
-    discriminator_y_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
+    G_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
+    F_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
+    D_X_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
+    D_Y_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
 
     @tf.function
     def train_step(real_x, real_y):
       # persistent is set to True because gen_tape and disc_tape is used more than
       # once to calculate the gradients.
-        with tf.GradientTape(persistent=True) as gen_tape, tf.GradientTape(persistent=True) as disc_tape:
+        with tf.GradientTape(persistent=True) as tape:
         # Generator G translates X -> Y
         # Generator F translates Y -> X.
             fake_y = G(real_x, training=True)
@@ -126,57 +126,46 @@ def main(args):
             disc_fake_y = D_Y(fake_y, training=True)
 
             # calculate the loss
-            gen_g_loss = generator_loss(disc_fake_y, loss_obj)
-            gen_f_loss = generator_loss(disc_fake_x, loss_obj)
+            G_loss = generator_loss(disc_fake_y, loss_obj)
+            F_loss = generator_loss(disc_fake_x, loss_obj)
 
             # Total generator loss = adversarial loss + cycle loss
-            total_gen_g_loss = gen_g_loss + calc_cycle_loss(real_x, cycled_x) + identity_loss(real_x, same_x)
-            total_gen_f_loss = gen_f_loss + calc_cycle_loss(real_y, cycled_y) + identity_loss(real_y, same_y)
+            total_G_loss = G_loss + calc_cycle_loss(real_x, cycled_x) + identity_loss(real_x, same_x)
+            total_F_loss = F_loss + calc_cycle_loss(real_y, cycled_y) + identity_loss(real_y, same_y)
 
-            disc_x_loss = discriminator_loss(disc_real_x, disc_fake_x, loss_obj)
-            disc_y_loss = discriminator_loss(disc_real_y, disc_fake_y, loss_obj)
+            D_X_loss = discriminator_loss(disc_real_x, disc_fake_x, loss_obj)
+            D_Y_loss = discriminator_loss(disc_real_y, disc_fake_y, loss_obj)
 
         # Calculate the gradients for generator and discriminator
-        generator_g_gradients = gen_tape.gradient(total_gen_g_loss, G.trainable_variables)
-        generator_f_gradients = gen_tape.gradient(total_gen_f_loss, F.trainable_variables)
-        discriminator_x_gradients = disc_tape.gradient(disc_x_loss, D_X.trainable_variables)
-        discriminator_y_gradients = disc_tape.gradient(disc_y_loss, D_Y.trainable_variables)
-        del gen_tape
-        del disc_tape
+        G_gradients = tape.gradient(total_G_loss, G.trainable_variables)
+        F_gradients = tape.gradient(total_F_loss, F.trainable_variables)
+        D_X_gradients = tape.gradient(D_X_loss, D_X.trainable_variables)
+        D_Y_gradients = tape.gradient(D_Y_loss, D_Y.trainable_variables)
 
         # Apply the gradients to the optimizer
-        generator_g_optimizer.apply_gradients(
-            zip(generator_g_gradients,
-                G.trainable_variables))
+        G_optimizer.apply_gradients(zip(G_gradients, G.trainable_variables))
+        F_optimizer.apply_gradients(zip(F_gradients, F.trainable_variables))
+        D_X_optimizer.apply_gradients(zip(D_X_gradients, D_X.trainable_variables))
+        D_Y_optimizer.apply_gradients(zip(D_Y_gradients, D_Y.trainable_variables))
 
-        generator_f_optimizer.apply_gradients(
-            zip(generator_f_gradients,
-                F.trainable_variables))
+        del tape
 
-        discriminator_x_optimizer.apply_gradients(
-            zip(discriminator_x_gradients,
-                D_X.trainable_variables))
+        return total_G_loss, total_F_loss, D_X_loss, D_Y_loss
 
-        discriminator_y_optimizer.apply_gradients(
-            zip(discriminator_y_gradients,
-                D_Y.trainable_variables))
-
-        return total_gen_g_loss, total_gen_f_loss, disc_x_loss, disc_y_loss
-
-    for epoch in range(EPOCHS):
+    for step, image_x, image_y in zip(range(99999), train_horses, train_zebras):
         start = time()
+        total_G_loss, total_F_loss, D_X_loss, D_Y_loss = train_step(image_x, image_y)
 
-        for image_x, image_y in tf.data.Dataset.zip((train_horses, train_zebras)):
-            total_gen_g_loss, total_gen_f_loss, disc_x_loss, disc_y_loss = train_step(image_x, image_y)
-            print('total_gen_g_loss: {:.3f}, \ttotal_gen_f_loss: {:.3f}, \tdisc_x_loss: {:.3f}, \tdisc_y_loss: {:.3f}'.format(
-                total_gen_g_loss, total_gen_f_loss, disc_x_loss, disc_y_loss))
+        if step % 50 == 0:
+            print('total_G_loss: {:.3f}, \ttotal_F_loss: {:.3f}, \tD_X_loss: {:.3f}, \tD_Y_loss: {:.3f}, time:{:.2f}s, step {}'.format(
+                total_G_loss, total_F_loss, D_X_loss, D_Y_loss, time()-start, step))
+
         # Using a consistent image (sample_horse) so that the progress of the model
         # is clearly visible.
-        generate_images(G, sample_horse, name='dev-'+str(epoch))
-        print ('Time taken for epoch {} is {} sec\n'.format(epoch + 1, time()-start))
+        if step % 200 == 0:
+            generate_images(G, sample_horse, name='outputs/dev-'+str(step))
 
     test(test_horses, G)
-
 
 
 def discriminator_loss(real, generated, loss_obj):
@@ -187,6 +176,7 @@ def discriminator_loss(real, generated, loss_obj):
     total_disc_loss = real_loss + generated_loss
 
     return total_disc_loss * 0.5
+
 
 def generator_loss(generated, loss_obj):
     return loss_obj(tf.ones_like(generated), generated)

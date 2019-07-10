@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
-from utils.model import sequence_generator, sequence_discriminator, cycle_gan_loss, monitor
-from utils.dataset import load_data, load_vocab, cipher_generator
+from models.seq_model import sequence_generator, sequence_discriminator, cycle_gan_loss, monitor
+from utils.dataset import cipher_generator
 from time import time
 from utils.arguments import args
 import numpy as np
@@ -34,7 +34,6 @@ def main(args):
     D_X = sequence_discriminator(args)
     D_Y = sequence_discriminator(args)
     W_emb = Dense(args.model.dim_hidden, use_bias=False)
-    W_emb(tf.zeros([1, args.vocab_size]))
 
     optimizer_G = tf.keras.optimizers.Adam(args.opti.G.lr, beta_1=0.9, beta_2=0.999)
     optimizer_F = tf.keras.optimizers.Adam(args.opti.G.lr, beta_1=0.9, beta_2=0.999)
@@ -42,6 +41,7 @@ def main(args):
     optimizer_DY = tf.keras.optimizers.Adam(args.opti.D.lr, beta_1=0.9, beta_2=0.999)
     optimizer_Embed = tf.keras.optimizers.Adam(args.opti.G.lr, beta_1=0.9, beta_2=0.999)
 
+    @tf.function
     def train_step(batch):
         """
         train_gX, G_X_loss, generator_G
@@ -73,13 +73,14 @@ def main(args):
         X_groundtruth, Y = next(iter_train)
         batch = [X, Y_groundtruth, Y, X_groundtruth]
         if iteration == 0:
+            # to init form all the variables and summary them
+            W_emb(tf.zeros([1, args.vocab_size]))
             cycle_gan_loss(G, F, D_X, D_Y, batch, args=args, W_emb=W_emb)
             F.summary(); G.summary(); D_X.summary(); D_Y.summary()
 
         dict_losses, predicts = train_step(batch)
 
         X_hat, Y_hat, X_reconstruction, Y_reconstruction = predicts
-
         X_groundtruth_loss, Y_groundtruth_loss, X_groundtruth_acc, Y_groundtruth_acc = \
             monitor(X, X_hat, X_reconstruction, X_groundtruth, Y, Y_hat, Y_reconstruction, Y_groundtruth, args.vocab_size)
 

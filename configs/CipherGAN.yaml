@@ -47,3 +47,4 @@ save_step: 50
 
 gpus: '0'
 batch_size: 360
+max_seq_len: 100

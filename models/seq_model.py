@@ -12,55 +12,55 @@ Args:
 import tensorflow as tf
 
 
-class sequence_discriminator(tf.keras.Model):
-
-    def __init__(self, args):
-        super().__init__()
-        filter_size = args.model.D.filter_size
-        filter_count = args.model.D.filter_count
-        self.dropout = args.model.D.dropout
-        self.add_timing = args.model.add_timing
-        self.args = args
-
-        self.list_convs  =[]
-        self.list_norms = []
-        self.list_activations = []
-
-        self.list_convs.append(Conv1D(
-                dim_output=filter_size,
-                filter_size=filter_count,
-                stride=2))
-        self.list_norms.append(lambda x: x)
-        self.list_activations.append(lambda x: tf.maximum(x, 0.2 * x))
-
-        for i in range(5):
-            self.list_convs.append(Conv1D(
-                    dim_output=filter_size * 2**(i + 1),
-                    filter_size=filter_count,
-                    stride=2))
-            self.list_norms.append(tf.keras.layers.LayerNormalization())
-            self.list_activations.append(lambda x: tf.maximum(x, 0.2 * x))
-
-        self.list_convs.append(Conv1D(
-                dim_output=1,
-                filter_size=filter_count,
-                stride=1))
-        self.list_norms.append(lambda x: x)
-        self.list_activations.append(lambda x: x)
-
-    def call(self, x):
-        if self.add_timing:
-            x = timing(x, self.add_timing)
-
-        if self.dropout != 0:
-            x = tf.nn.dropout(x, 1 - self.dropout)
-
-        for conv, norm, activation in zip(self.list_convs, self.list_norms, self.list_activations):
-            x = conv(x)
-            x = norm(x)
-            x = activation(x)
-
-        return x
+# class sequence_discriminator(tf.keras.Model):
+#
+#     def __init__(self, args):
+#         super().__init__()
+#         filter_size = args.model.D.filter_size
+#         filter_count = args.model.D.filter_count
+#         self.dropout = args.model.D.dropout
+#         self.add_timing = args.model.add_timing
+#         self.args = args
+#
+#         self.list_convs  =[]
+#         self.list_norms = []
+#         self.list_activations = []
+#
+#         self.list_convs.append(Conv1D(
+#                 dim_output=filter_size,
+#                 filter_size=filter_count,
+#                 stride=2))
+#         self.list_norms.append(lambda x: x)
+#         self.list_activations.append(lambda x: tf.maximum(x, 0.2 * x))
+#
+#         for i in range(5):
+#             self.list_convs.append(Conv1D(
+#                     dim_output=filter_size * 2**(i + 1),
+#                     filter_size=filter_count,
+#                     stride=2))
+#             self.list_norms.append(tf.keras.layers.LayerNormalization())
+#             self.list_activations.append(lambda x: tf.maximum(x, 0.2 * x))
+#
+#         self.list_convs.append(Conv1D(
+#                 dim_output=1,
+#                 filter_size=filter_count,
+#                 stride=1))
+#         self.list_norms.append(lambda x: x)
+#         self.list_activations.append(lambda x: x)
+#
+#     def call(self, x):
+#         if self.add_timing:
+#             x = timing(x, self.add_timing)
+#
+#         if self.dropout != 0:
+#             x = tf.nn.dropout(x, 1 - self.dropout)
+#
+#         for conv, norm, activation in zip(self.list_convs, self.list_norms, self.list_activations):
+#             x = conv(x)
+#             x = norm(x)
+#             x = activation(x)
+#
+#         return x
 
 class sequence_generator(tf.keras.Model):
 
@@ -121,6 +121,57 @@ class sequence_generator(tf.keras.Model):
 
         return output_dist
 
+def sequence_discriminator(args):
+    inp = tf.keras.layers.Input(shape=[None, None, args.vocab_size], name='discriminator_input')
+    x = inp
+
+    def __init__(self, args):
+        super().__init__()
+        filter_size = args.model.D.filter_size
+        filter_count = args.model.D.filter_count
+        self.dropout = args.model.D.dropout
+        self.add_timing = args.model.add_timing
+        self.args = args
+
+        self.list_convs  =[]
+        self.list_norms = []
+        self.list_activations = []
+
+        self.list_convs.append(Conv1D(
+                dim_output=filter_size,
+                filter_size=filter_count,
+                stride=2))
+        self.list_norms.append(lambda x: x)
+        self.list_activations.append(lambda x: tf.maximum(x, 0.2 * x))
+
+        for i in range(5):
+            self.list_convs.append(Conv1D(
+                    dim_output=filter_size * 2**(i + 1),
+                    filter_size=filter_count,
+                    stride=2))
+            self.list_norms.append(tf.keras.layers.LayerNormalization())
+            self.list_activations.append(lambda x: tf.maximum(x, 0.2 * x))
+
+        self.list_convs.append(Conv1D(
+                dim_output=1,
+                filter_size=filter_count,
+                stride=1))
+        self.list_norms.append(lambda x: x)
+        self.list_activations.append(lambda x: x)
+
+    def call(self, x):
+        if self.add_timing:
+            x = timing(x, self.add_timing)
+
+        if self.dropout != 0:
+            x = tf.nn.dropout(x, 1 - self.dropout)
+
+        for conv, norm, activation in zip(self.list_convs, self.list_norms, self.list_activations):
+            x = conv(x)
+            x = norm(x)
+            x = activation(x)
+
+        return x
 
 def monitor(X, X_hat, X_reconstruction, X_groundtruth, Y, Y_hat, Y_reconstruction, Y_groundtruth, vocab_size):
     """
@@ -180,25 +231,25 @@ def cycle_gan_loss(G, F, D_X, D_Y, batch, args, W_emb=None):
     Y_dist = tf.one_hot(Y, depth=args.vocab_size)
 
     if W_emb:
-        Y_hat = G(embed_inputs(X, W_emb))
-        X_hat = F(embed_inputs(Y, W_emb))
-        X_reconstruction = F(W_emb(Y_hat))
-        Y_reconstruction = G(W_emb(X_hat))
+        Y_hat = G(embed_inputs(X, W_emb), training=True)
+        X_hat = F(embed_inputs(Y, W_emb), training=True)
+        X_reconstruction = F(W_emb(Y_hat), training=True)
+        Y_reconstruction = G(W_emb(X_hat), training=True)
 
-        X_discrim = D_X(embed_inputs(X, W_emb))
-        Y_discrim = D_Y(embed_inputs(Y, W_emb))
-        X_hat_discrim = D_X(W_emb(X_hat))
-        Y_hat_discrim = D_Y(W_emb(Y_hat))
+        X_discrim = D_X(embed_inputs(X, W_emb), training=True)
+        Y_discrim = D_Y(embed_inputs(Y, W_emb), training=True)
+        X_hat_discrim = D_X(W_emb(X_hat), training=True)
+        Y_hat_discrim = D_Y(W_emb(Y_hat), training=True)
     else:
-        Y_hat = F(X_dist)
-        X_hat = G(Y_dist)
-        X_reconstruction = G(Y_hat)
-        Y_reconstruction = F(X_hat)
+        Y_hat = F(X_dist, training=True)
+        X_hat = G(Y_dist, training=True)
+        X_reconstruction = G(Y_hat, training=True)
+        Y_reconstruction = F(X_hat, training=True)
 
-        X_discrim = D_X(X_dist)
-        Y_discrim = D_Y(Y_dist)
-        X_hat_discrim = D_X(X_hat)
-        Y_hat_discrim = D_Y(Y_hat)
+        X_discrim = D_X(X_dist, training=True)
+        Y_discrim = D_Y(Y_dist, training=True)
+        X_hat_discrim = D_X(X_hat, training=True)
+        Y_hat_discrim = D_Y(Y_hat, training=True)
 
     if args.model.lp_distance == "l0.5":
         X_reconstr_err = (X_dist - X_reconstruction)**0.5
@@ -358,7 +409,7 @@ def wasserstein_penalty(discriminator, A_true, A_fake, W_emb, args):
         A_interp = W_emb(A_interp)
     with tf.GradientTape() as t:
         t.watch(A_interp)
-        discrim_A_interp = discriminator(A_interp)
+        discrim_A_interp = discriminator(A_interp, training=True)
     discrim_A_grads = t.gradient(discrim_A_interp, A_interp)
     discrim_A_grads = tf.squeeze(discrim_A_grads)
 
