@@ -33,7 +33,9 @@ def main(args):
     G = sequence_generator(args)
     D_X = sequence_discriminator(args)
     D_Y = sequence_discriminator(args)
+    F.summary(); G.summary(); D_X.summary(); D_Y.summary()
     W_emb = Dense(args.model.dim_hidden, use_bias=False)
+    W_emb(tf.zeros([1, args.vocab_size]))
 
     optimizer_G = tf.keras.optimizers.Adam(args.opti.G.lr, beta_1=0.9, beta_2=0.999)
     optimizer_F = tf.keras.optimizers.Adam(args.opti.G.lr, beta_1=0.9, beta_2=0.999)
@@ -72,11 +74,11 @@ def main(args):
         X, Y_groundtruth = next(iter_train)
         X_groundtruth, Y = next(iter_train)
         batch = [X, Y_groundtruth, Y, X_groundtruth]
-        if iteration == 0:
+        # if iteration == 0:
             # to init form all the variables and summary them
-            W_emb(tf.zeros([1, args.vocab_size]))
-            cycle_gan_loss(G, F, D_X, D_Y, batch, args=args, W_emb=W_emb)
-            F.summary(); G.summary(); D_X.summary(); D_Y.summary()
+            # W_emb(tf.zeros([1, args.vocab_size]))
+            # cycle_gan_loss(G, F, D_X, D_Y, batch, args=args, W_emb=W_emb)
+            # F.summary(); G.summary(); D_X.summary(); D_Y.summary()
 
         dict_losses, predicts = train_step(batch)
 

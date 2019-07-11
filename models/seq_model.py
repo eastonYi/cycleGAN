@@ -12,166 +12,73 @@ Args:
 import tensorflow as tf
 
 
-# class sequence_discriminator(tf.keras.Model):
-#
-#     def __init__(self, args):
-#         super().__init__()
-#         filter_size = args.model.D.filter_size
-#         filter_count = args.model.D.filter_count
-#         self.dropout = args.model.D.dropout
-#         self.add_timing = args.model.add_timing
-#         self.args = args
-#
-#         self.list_convs  =[]
-#         self.list_norms = []
-#         self.list_activations = []
-#
-#         self.list_convs.append(Conv1D(
-#                 dim_output=filter_size,
-#                 filter_size=filter_count,
-#                 stride=2))
-#         self.list_norms.append(lambda x: x)
-#         self.list_activations.append(lambda x: tf.maximum(x, 0.2 * x))
-#
-#         for i in range(5):
-#             self.list_convs.append(Conv1D(
-#                     dim_output=filter_size * 2**(i + 1),
-#                     filter_size=filter_count,
-#                     stride=2))
-#             self.list_norms.append(tf.keras.layers.LayerNormalization())
-#             self.list_activations.append(lambda x: tf.maximum(x, 0.2 * x))
-#
-#         self.list_convs.append(Conv1D(
-#                 dim_output=1,
-#                 filter_size=filter_count,
-#                 stride=1))
-#         self.list_norms.append(lambda x: x)
-#         self.list_activations.append(lambda x: x)
-#
-#     def call(self, x):
-#         if self.add_timing:
-#             x = timing(x, self.add_timing)
-#
-#         if self.dropout != 0:
-#             x = tf.nn.dropout(x, 1 - self.dropout)
-#
-#         for conv, norm, activation in zip(self.list_convs, self.list_norms, self.list_activations):
-#             x = conv(x)
-#             x = norm(x)
-#             x = activation(x)
-#
-#         return x
+def sequence_generator(args):
+    filter_count = args.model.G.filter_count
+    filter_size = args.model.G.filter_size
+    dim_channel = args.model.G.num_hidden if args.model.use_embeddings else args.vocab_size
 
-class sequence_generator(tf.keras.Model):
+    x = input = tf.keras.layers.Input(shape=[args.max_seq_len, dim_channel],
+                                      name='generator_input')
 
-    def __init__(self, args):
-        super().__init__()
-        filter_count = args.model.G.filter_count
-        filter_size = args.model.G.filter_size
-        self.add_timing = args.model.add_timing
-        self.args = args
+    if args.model.add_timing:
+        x = timing(x, args.model.add_timing, args)
 
-        self.list_layers = []
-        self.list_resnet_convs = [[], []]
-        self.list_activations = []
+    # x = tf.pad(x, [[0, 0], [self.args.model.G.filter_size // 2, self.args.model.G.filter_size // 2], [0, 0]], "CONSTANT")
+    x = Conv1D(dim_output=filter_count,
+               filter_size=filter_size,
+               padding="valid")(x)
+    x = tf.keras.layers.ReLU()(x)
+    x = Conv1D(dim_output=filter_count * 2,
+               filter_size=filter_size)(x)
+    x = tf.keras.layers.ReLU()(x)
+    x = Conv1D(dim_output=filter_count * 4,
+               filter_size=filter_size)(x)
+    x = tf.keras.layers.ReLU()(x)
 
-        self.list_layers.append(Conv1D(
-                dim_output=filter_count,
-                filter_size=filter_size,
-                padding="valid"))
-        self.list_activations.append(tf.keras.layers.ReLU())
-        self.list_layers.append(Conv1D(
-                dim_output=filter_count * 2,
-                filter_size=filter_size))
-        self.list_activations.append(tf.keras.layers.ReLU())
-        self.list_layers.append(Conv1D(
-                dim_output=filter_count * 4,
-                filter_size=filter_size))
-        self.list_activations.append(tf.keras.layers.ReLU())
+    for i in range(5):
+        x = build_resnet_block(x, filter_count, filter_size, pad=False)
 
-        for i in range(5):
-            self.list_resnet_convs[0].append(Conv1D(
-                    dim_output=filter_count * 4,
-                    filter_size=filter_size,
-                    padding="valid"))
-            self.list_resnet_convs[1].append(Conv1D(
-                    dim_output=filter_count * 4,
-                    filter_size=filter_size,
-                    padding="valid"))
+    x = Conv1D(dim_output=args.vocab_size,
+               filter_size=1,
+               padding="valid")(x)
 
-        self.list_layers.append(Conv1D(
-                dim_output=args.vocab_size,
-                filter_size=1,
-                padding="valid"))
+    output = tf.nn.softmax(x)
 
-    def call(self, x):
-        if self.add_timing:
-            x = timing(x, self.add_timing)
+    return tf.keras.Model(inputs=input, outputs=output, name='sequence_generator')
 
-        # x = tf.pad(x, [[0, 0], [self.args.model.G.filter_size // 2, self.args.model.G.filter_size // 2], [0, 0]], "CONSTANT")
-
-        for conv, activation in zip(self.list_layers[:-1], self.list_activations):
-            x = conv(x)
-            x = activation(x)
-        for conv_1, conv_2 in zip(*self.list_resnet_convs):
-            x = build_resnet_block(x, conv_1, conv_2, self.args.model.G.filter_size, pad=False)
-        x = self.list_layers[-1](x)
-
-        output_dist = tf.nn.softmax(x)
-
-        return output_dist
 
 def sequence_discriminator(args):
-    inp = tf.keras.layers.Input(shape=[None, None, args.vocab_size], name='discriminator_input')
-    x = inp
+    filter_size = args.model.D.filter_size
+    filter_count = args.model.D.filter_count
+    dim_channel = args.model.D.num_hidden if args.model.use_embeddings else args.vocab_size
 
-    def __init__(self, args):
-        super().__init__()
-        filter_size = args.model.D.filter_size
-        filter_count = args.model.D.filter_count
-        self.dropout = args.model.D.dropout
-        self.add_timing = args.model.add_timing
-        self.args = args
+    x = input = tf.keras.layers.Input(shape=[args.max_seq_len, dim_channel],
+                                      name='discriminator_input')
 
-        self.list_convs  =[]
-        self.list_norms = []
-        self.list_activations = []
+    if args.model.add_timing:
+        x = timing(x, args.model.add_timing, args)
 
-        self.list_convs.append(Conv1D(
-                dim_output=filter_size,
-                filter_size=filter_count,
-                stride=2))
-        self.list_norms.append(lambda x: x)
-        self.list_activations.append(lambda x: tf.maximum(x, 0.2 * x))
+    if args.model.D.dropout != 0:
+        x = tf.nn.dropout(x, 1 - args.model.D.dropout)
 
-        for i in range(5):
-            self.list_convs.append(Conv1D(
-                    dim_output=filter_size * 2**(i + 1),
+    x = Conv1D(dim_output=filter_size,
+               filter_size=filter_count,
+               stride=2)(x)
+    x = tf.maximum(x, 0.2 * x)
+
+    for i in range(5):
+        x = Conv1D(dim_output=filter_size * 2**(i + 1),
+                   filter_size=filter_count,
+                   stride=2)(x)
+        x = tf.keras.layers.LayerNormalization()(x)
+        x = tf.maximum(x, 0.2 * x)
+
+    output = Conv1D(dim_output=1,
                     filter_size=filter_count,
-                    stride=2))
-            self.list_norms.append(tf.keras.layers.LayerNormalization())
-            self.list_activations.append(lambda x: tf.maximum(x, 0.2 * x))
+                    stride=1)(x)
 
-        self.list_convs.append(Conv1D(
-                dim_output=1,
-                filter_size=filter_count,
-                stride=1))
-        self.list_norms.append(lambda x: x)
-        self.list_activations.append(lambda x: x)
+    return tf.keras.Model(inputs=input, outputs=output, name='sequence_discriminator')
 
-    def call(self, x):
-        if self.add_timing:
-            x = timing(x, self.add_timing)
-
-        if self.dropout != 0:
-            x = tf.nn.dropout(x, 1 - self.dropout)
-
-        for conv, norm, activation in zip(self.list_convs, self.list_norms, self.list_activations):
-            x = conv(x)
-            x = norm(x)
-            x = activation(x)
-
-        return x
 
 def monitor(X, X_hat, X_reconstruction, X_groundtruth, Y, Y_hat, Y_reconstruction, Y_groundtruth, vocab_size):
     """
@@ -302,22 +209,26 @@ def Conv1D(dim_output, filter_size, padding='same', stride=1):
 
 
 # modified from https://github.com/hardikbansal/CycleGAN/blob/master/model.py
-def build_resnet_block(x, Conv1D_1, Conv1D_2, filter_size, pad=True):
+def build_resnet_block(x, filter_count, filter_size, pad=True):
     if pad:
         out_res = tf.pad(x, [[0, 0]] + [[filter_size // 2, filter_size // 2]] *
                          (len(x.shape) - 2) + [[0, 0]], "REFLECT")
     else:
         out_res = x
-    out_res = Conv1D_1(out_res)
+    out_res = Conv1D(dim_output=filter_count * 4,
+                     filter_size=filter_size,
+                     padding="valid")(out_res)
     if pad:
         out_res = tf.pad(out_res, [[0, 0]] + [[filter_size // 2, filter_size // 2]] *
                          (len(x.shape) - 2) + [[0, 0]], "REFLECT")
-    out_res = Conv1D_2(out_res)
+    out_res = Conv1D(dim_output=filter_count * 4,
+                     filter_size=filter_size,
+                     padding="valid")(out_res)
 
     return tf.nn.relu(out_res + x)
 
 
-def timing(x, timing_type):
+def timing(x, timing_type, args):
 
     if timing_type == "transformer":
         shape = x.shape
@@ -334,18 +245,13 @@ def timing(x, timing_type):
 
         return x + timing
 
-    # elif args.timing_type == "concat":
-    #     timing = tf.get_variable(
-    #             "timing",
-    #             shape=[args.sample_length, args.hidden_size],
-    #             dtype=tf.float32,
-    #             initializer=tf.random_normal_initializer(
-    #                     mean=0.0, stddev=1.0))
-    #     timing = tf.tile(tf.expand_dims(timing, 0), [args.batch_size, 1, 1])
-    #     timing = timing[:tf.shape(x)[0], :tf.shape(x)[1], :]
-    #     return tf.concat([x, timing], 2)
-    # else:
-    #     raise Exception("Bad timing type %s" % args.timing_type)
+    elif timing_type == "concat":
+        timing = tf.random.normal([args.max_seq_len, args.model.dim_hidden], mean=0.0, stddev=1.0)
+        timing = tf.tile(tf.expand_dims(timing, 0), [args.batch_size, 1, 1])
+        timing = timing[:x.shape[0], :x.shape[1], :]
+        return tf.concat([x, timing], 2)
+    else:
+        raise Exception("Bad timing type %s" % timing_type)
 
 def embed_inputs(inputs, W_emb):
     return tf.gather(W_emb.variables[0], inputs)

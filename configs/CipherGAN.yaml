@@ -22,7 +22,7 @@ model:
         filter_count: 32
         filter_size: 1
         dropout: 0.5
-    add_timing: transformer
+    add_timing: concat
     dim_hidden: 512
     dropout: 0.5
     lp_distance: l1
