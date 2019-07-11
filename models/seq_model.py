@@ -11,7 +11,6 @@ Args:
 
 import tensorflow as tf
 
-
 def sequence_generator(args):
     filter_count = args.model.G.filter_count
     filter_size = args.model.G.filter_size
@@ -21,30 +20,38 @@ def sequence_generator(args):
                                       name='generator_input')
 
     if args.model.add_timing:
-        x = timing(x, args.model.add_timing, args)
+        x, time_table = timing(x, args.model.add_timing, args)
 
-    # x = tf.pad(x, [[0, 0], [self.args.model.G.filter_size // 2, self.args.model.G.filter_size // 2], [0, 0]], "CONSTANT")
+    x = tf.pad(x, [[0, 0], [filter_size // 2, filter_size // 2], [0, 0]], "CONSTANT")
     x = Conv1D(dim_output=filter_count,
                filter_size=filter_size,
                padding="valid")(x)
+    x = tf.keras.layers.LayerNormalization()(x)
     x = tf.keras.layers.ReLU()(x)
+
     x = Conv1D(dim_output=filter_count * 2,
                filter_size=filter_size)(x)
+    x = tf.keras.layers.LayerNormalization()(x)
     x = tf.keras.layers.ReLU()(x)
+
     x = Conv1D(dim_output=filter_count * 4,
                filter_size=filter_size)(x)
+    x = tf.keras.layers.LayerNormalization()(x)
     x = tf.keras.layers.ReLU()(x)
 
     for i in range(5):
-        x = build_resnet_block(x, filter_count, filter_size, pad=False)
+        x = build_resnet_block(x, filter_count * 4, filter_size, pad=True)
 
     x = Conv1D(dim_output=args.vocab_size,
-               filter_size=1,
-               padding="valid")(x)
+               filter_size=1)(x)
+    x = tf.keras.layers.LayerNormalization()(x)
+    x = tf.keras.layers.ReLU()(x)
 
     output = tf.nn.softmax(x)
 
-    return tf.keras.Model(inputs=input, outputs=output, name='sequence_generator')
+    model = tf.keras.Model(inputs=input, outputs=output, name='sequence_generator')
+
+    return model, time_table
 
 
 def sequence_discriminator(args):
@@ -56,10 +63,10 @@ def sequence_discriminator(args):
                                       name='discriminator_input')
 
     if args.model.add_timing:
-        x = timing(x, args.model.add_timing, args)
+        x, time_table = timing(x, args.model.add_timing, args)
 
     if args.model.D.dropout != 0:
-        x = tf.nn.dropout(x, 1 - args.model.D.dropout)
+        x = tf.keras.layers.Dropout(args.model.D.dropout)(x)
 
     x = Conv1D(dim_output=filter_size,
                filter_size=filter_count,
@@ -77,7 +84,20 @@ def sequence_discriminator(args):
                     filter_size=filter_count,
                     stride=1)(x)
 
-    return tf.keras.Model(inputs=input, outputs=output, name='sequence_discriminator')
+    return tf.keras.Model(inputs=input, outputs=output, name='sequence_discriminator'), time_table
+
+
+def mini(args):
+    x = input = tf.keras.layers.Input(shape=[args.max_seq_len, 28])
+
+    # x, time_table = timing(x, args.model.add_timing, args)
+    p = tf.Variable(tf.ones([args.batch_size, args.max_seq_len, 5]))
+    x = tf.concat([x, p], -1)
+    x = tf.keras.layers.Dense(1)(x)
+
+    output = tf.reduce_sum(x)
+
+    return tf.keras.Model(inputs=input, outputs=output), p
 
 
 def monitor(X, X_hat, X_reconstruction, X_groundtruth, Y, Y_hat, Y_reconstruction, Y_groundtruth, vocab_size):
@@ -215,15 +235,18 @@ def build_resnet_block(x, filter_count, filter_size, pad=True):
                          (len(x.shape) - 2) + [[0, 0]], "REFLECT")
     else:
         out_res = x
-    out_res = Conv1D(dim_output=filter_count * 4,
+    out_res = Conv1D(dim_output=filter_count,
                      filter_size=filter_size,
                      padding="valid")(out_res)
+    x = tf.keras.layers.LayerNormalization()(x)
+    x = tf.keras.layers.ReLU()(x)
     if pad:
         out_res = tf.pad(out_res, [[0, 0]] + [[filter_size // 2, filter_size // 2]] *
                          (len(x.shape) - 2) + [[0, 0]], "REFLECT")
-    out_res = Conv1D(dim_output=filter_count * 4,
+    out_res = Conv1D(dim_output=filter_count,
                      filter_size=filter_size,
                      padding="valid")(out_res)
+    x = tf.keras.layers.LayerNormalization()(x)
 
     return tf.nn.relu(out_res + x)
 
@@ -246,10 +269,12 @@ def timing(x, timing_type, args):
         return x + timing
 
     elif timing_type == "concat":
-        timing = tf.random.normal([args.max_seq_len, args.model.dim_hidden], mean=0.0, stddev=1.0)
-        timing = tf.tile(tf.expand_dims(timing, 0), [args.batch_size, 1, 1])
+        # timing = tf.random.normal([args.max_seq_len, args.model.dim_hidden], mean=0.0, stddev=1.0)
+        timing_embedding = tf.Variable(tf.random.normal([args.max_seq_len, args.model.dim_hidden], mean=0.0, stddev=1.0),
+                             name="timing_embedding")
+        timing = tf.tile(timing_embedding[None, :, :], [args.batch_size, 1, 1])
         timing = timing[:x.shape[0], :x.shape[1], :]
-        return tf.concat([x, timing], 2)
+        return tf.concat([x, timing], -1), timing_embedding
     else:
         raise Exception("Bad timing type %s" % timing_type)
 

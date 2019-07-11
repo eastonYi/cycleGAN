@@ -3,5 +3,3 @@ push
 .remote*
 *.pyc
 *.pkl
-*.jpg
-*.png

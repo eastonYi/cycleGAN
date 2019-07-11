@@ -8,6 +8,7 @@ dirs:
     test:
         data: /data/sxu/easton/data/AISHELL/test_phone_67.csv
     vocab: /home/user/easton/projects/CipherGAN-tf2/data/vigenere345_brown200_vocab.txt
+    checkpoint_path: /home/user/easton/projects/CipherGAN-tf2/checkpoint/cipherGAN/
 
 model:
     G:
@@ -26,10 +27,10 @@ model:
     dim_hidden: 512
     dropout: 0.5
     lp_distance: l1
-    use_wasserstein: False
+    use_wasserstein: True
     use_embeddings: True
     original_l2: True
-    loss_type: wgan  # loss_type
+    loss_type: None  # loss_type
 
 opti:
     type: adam
@@ -46,5 +47,5 @@ decode_step: 50
 save_step: 50
 
 gpus: '0'
-batch_size: 360
-max_seq_len: 100
+batch_size: 20
+max_seq_len: 10

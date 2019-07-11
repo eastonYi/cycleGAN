@@ -29,6 +29,9 @@ $$backward\ cycle\ consistency\ loss: Y -> F(Y) -> G(F(Y)) \sim \hat{Y}$$
 
 ![Cycle loss](imgs/cycle_loss.png)
 
+### Results
+![Cycle loss](imgs/dev-17000.png)
+
 ## Reference
 - [cycleGAN](https://github.com/tensorflow/docs/blob/master/site/en/r2/tutorials/generative/cyclegan.ipynb)
 - [cipherGAN](https://github.com/for-ai/CipherGAN)
