@@ -40,12 +40,12 @@ opti:
     G:
         lr: 0.00005
     D:
-        lr: 0.00002
+        lr: 0.00005
 
 dev_step: 50
 decode_step: 50
 save_step: 50
 
 gpus: '0'
-batch_size: 20
-max_seq_len: 10
+batch_size: 280
+max_seq_len: 100

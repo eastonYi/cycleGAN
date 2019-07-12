@@ -226,6 +226,9 @@ def test(test_horses, G):
 
 
 def test_model():
+
+    checkpoint_path = "checkpoints/train"
+
     test_horses = tf.data.Dataset.list_files(PATH + 'testA/*.jpg', shuffle=False).map(
         preprocess_image_test, num_parallel_calls=AUTOTUNE).cache().shuffle(
         BUFFER_SIZE).batch(1)
@@ -258,13 +261,13 @@ def test_model():
 
     ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)
     ckpt.restore(ckpt_manager.latest_checkpoint)
-    print ('Latest checkpoint restored!!')
+    print ('Latest checkpoint {} restored!!'.format(ckpt_manager.latest_checkpoint))
 
-    for i, inp in zip(test_horses):
+    for i, inp in enumerate(test_horses):
         generate_images(G, inp, name='test/horse2zebra-'+str(i))
 
-    for i, inp in zip(test_zebras):
-        generate_images(G, inp, name='test/zebra2horse-'+str(i))
+    for i, inp in enumerate(test_zebras):
+        generate_images(F, inp, name='test/zebra2horse-'+str(i))
 
 
 if __name__ == '__main__':

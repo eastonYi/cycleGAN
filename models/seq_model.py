@@ -20,7 +20,8 @@ def sequence_generator(args):
                                       name='generator_input')
 
     if args.model.add_timing:
-        x, time_table = timing(x, args.model.add_timing, args)
+        # x, time_table = timing(x, args.model.add_timing, args)
+        x = add_timing(args.model.dim_hidden, args.batch_size)(x)
 
     x = tf.pad(x, [[0, 0], [filter_size // 2, filter_size // 2], [0, 0]], "CONSTANT")
     x = Conv1D(dim_output=filter_count,
@@ -51,7 +52,7 @@ def sequence_generator(args):
 
     model = tf.keras.Model(inputs=input, outputs=output, name='sequence_generator')
 
-    return model, time_table
+    return model
 
 
 def sequence_discriminator(args):
@@ -63,7 +64,8 @@ def sequence_discriminator(args):
                                       name='discriminator_input')
 
     if args.model.add_timing:
-        x, time_table = timing(x, args.model.add_timing, args)
+        # x, time_table = timing(x, args.model.add_timing, args)
+        x = add_timing(args.model.dim_hidden, args.batch_size)(x)
 
     if args.model.D.dropout != 0:
         x = tf.keras.layers.Dropout(args.model.D.dropout)(x)
@@ -84,20 +86,21 @@ def sequence_discriminator(args):
                     filter_size=filter_count,
                     stride=1)(x)
 
-    return tf.keras.Model(inputs=input, outputs=output, name='sequence_discriminator'), time_table
+    return tf.keras.Model(inputs=input, outputs=output, name='sequence_discriminator')
 
 
-def mini(args):
-    x = input = tf.keras.layers.Input(shape=[args.max_seq_len, 28])
+class add_timing(tf.keras.layers.Layer):
+    def __init__(self, dim_hidden, batch_size):
+        super().__init__()
+        self.dim_hidden = dim_hidden
+        self.batch_size = batch_size
 
-    # x, time_table = timing(x, args.model.add_timing, args)
-    p = tf.Variable(tf.ones([args.batch_size, args.max_seq_len, 5]))
-    x = tf.concat([x, p], -1)
-    x = tf.keras.layers.Dense(1)(x)
+    def build(self, input_shape):
+        self.time_table = self.add_variable("time_table", shape=[input_shape[1], self.dim_hidden])
 
-    output = tf.reduce_sum(x)
-
-    return tf.keras.Model(inputs=input, outputs=output), p
+    def call(self, input):
+        _time_table = tf.tile(tf.expand_dims(self.time_table, 0), [self.batch_size, 1, 1])
+        return tf.concat([input, _time_table], -1)
 
 
 def monitor(X, X_hat, X_reconstruction, X_groundtruth, Y, Y_hat, Y_reconstruction, Y_groundtruth, vocab_size):

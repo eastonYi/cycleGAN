@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
-from models.seq_model import sequence_generator, sequence_discriminator, cycle_gan_loss, monitor, mini
+from models.seq_model import sequence_generator, sequence_discriminator, cycle_gan_loss, monitor
 from utils.dataset import cipher_generator
 from time import time
 from utils.arguments import args
@@ -28,20 +28,11 @@ def main(args):
         (tf.int32, tf.int32), (tf.TensorShape([None]), tf.TensorShape([None])))
     iter_test = iter(tfdata_test.cache().padded_batch(args.batch_size, ([args.max_seq_len], [args.max_seq_len])).prefetch(buffer_size=5))
 
-
-    m, table = mini(args)
-    x = tf.ones([args.batch_size, args.max_seq_len, 28])
-
-    with tf.GradientTape(persistent=True) as tape:
-        loss = m(x)
-    gradients = tape.gradient(loss, m.trainable_variables)
-    import pdb; pdb.set_trace()
-
     # gather transformations and descriminators
-    F, F_time_table = sequence_generator(args)
-    G, G_time_table = sequence_generator(args)
-    D_X, DX_time_table = sequence_discriminator(args)
-    D_Y, DY_time_table = sequence_discriminator(args)
+    F = sequence_generator(args)
+    G = sequence_generator(args)
+    D_X = sequence_discriminator(args)
+    D_Y = sequence_discriminator(args)
     F.summary(); G.summary(); D_X.summary(); D_Y.summary()
     W_emb = Dense(args.model.dim_hidden, use_bias=False)
     W_emb(tf.zeros([1, args.vocab_size]))
@@ -70,7 +61,7 @@ def main(args):
     #     ckpt.restore(ckpt_manager.latest_checkpoint)
     #     print ('Latest checkpoint restored!!')
 
-    # @tf.function
+    @tf.function
     def train_step(batch):
         """
         train_gX, G_X_loss, generator_G
@@ -86,9 +77,8 @@ def main(args):
 
         for loss_type, vars, optimizer in zip(
             ['G_loss', 'F_loss', 'D_X_loss', 'D_Y_loss', 'Embed_loss'],
-            [G.trainable_variables+[G_time_table], F.trainable_variables+[F_time_table], D_X.trainable_variables+[DX_time_table], D_Y.trainable_variables+[DY_time_table], W_emb.trainable_variables],
+            [G.trainable_variables, F.trainable_variables, D_X.trainable_variables, D_Y.trainable_variables, W_emb.trainable_variables],
             [optimizer_G, optimizer_F, optimizer_DX, optimizer_DY, optimizer_Embed]):
-            import pdb; pdb.set_trace()
             gradients = tape.gradient(dict_losses[loss_type], vars)
             optimizer.apply_gradients(zip(gradients, vars))
         del tape
